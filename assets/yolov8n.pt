@@ -1,0 +1,3 @@
+# This is a placeholder file. The YOLOv8 model will be downloaded at runtime 
+# by the object_detector.py script if not already present.
+# The actual model file is a binary file that cannot be included directly in this response.
