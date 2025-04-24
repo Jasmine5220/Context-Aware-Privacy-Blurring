@@ -2,10 +2,12 @@ import streamlit as st
 import cv2
 import numpy as np
 import time
+import json
 from utils.video_processor import VideoProcessor
 from utils.object_detector import ObjectDetector
 from utils.text_analyzer import TextAnalyzer
 from utils.blur_techniques import BlurTechniques
+from utils.database import get_db_manager
 import os
 
 # Page configuration
