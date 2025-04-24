@@ -29,6 +29,10 @@ try:
 except FileNotFoundError:
     st.warning("Custom styling not found. Using default styling.")
 
+# Initialize database manager
+if 'db_manager' not in st.session_state:
+    st.session_state.db_manager = get_db_manager()
+
 # Initialize session state
 if 'processor' not in st.session_state:
     object_detector = ObjectDetector()
@@ -39,16 +43,56 @@ if 'processor' not in st.session_state:
 if 'is_webcam_active' not in st.session_state:
     st.session_state.is_webcam_active = False
 
+if 'detection_session_id' not in st.session_state:
+    st.session_state.detection_session_id = None
+
 if 'blur_rules' not in st.session_state:
-    # Default blur rules (object_type: blur_type)
-    st.session_state.blur_rules = {
-        'face': 'pixelate',
-        'document': 'gaussian',
-        'credit_card': 'pixelate',
-        'license_plate': 'pixelate',
-        'screen': 'edge_preserving',
-        'text': 'gaussian'
-    }
+    # Get default blur rules from database
+    try:
+        default_rule = st.session_state.db_manager.get_default_blur_rule()
+        if default_rule:
+            st.session_state.blur_rules = default_rule.rules
+        else:
+            # Fallback to hardcoded defaults if database doesn't have them
+            st.session_state.blur_rules = {
+                'face': 'pixelate',
+                'document': 'gaussian',
+                'credit_card': 'pixelate',
+                'license_plate': 'pixelate',
+                'screen': 'edge_preserving',
+                'text': 'gaussian'
+            }
+    except Exception as e:
+        st.warning(f"Failed to load blur rules from database: {e}. Using defaults.")
+        st.session_state.blur_rules = {
+            'face': 'pixelate',
+            'document': 'gaussian',
+            'credit_card': 'pixelate',
+            'license_plate': 'pixelate',
+            'screen': 'edge_preserving',
+            'text': 'gaussian'
+        }
+
+if 'sensitive_keywords' not in st.session_state:
+    # Get default keywords from database
+    try:
+        default_list = st.session_state.db_manager.get_default_keyword_list()
+        if default_list:
+            st.session_state.sensitive_keywords = default_list.keywords
+        else:
+            # Fallback to hardcoded defaults
+            st.session_state.sensitive_keywords = [
+                "confidential", "private", "secret", "password", 
+                "visa", "mastercard", "american express", "cvv", 
+                "ssn", "social security", "classified"
+            ]
+    except Exception as e:
+        st.warning(f"Failed to load sensitive keywords from database: {e}. Using defaults.")
+        st.session_state.sensitive_keywords = [
+            "confidential", "private", "secret", "password", 
+            "visa", "mastercard", "american express", "cvv", 
+            "ssn", "social security", "classified"
+        ]
 
 def main():
     # Title and description
@@ -82,53 +126,145 @@ def main():
         # Blur settings
         st.subheader("Blur Settings")
         
-        # Object blur methods
-        st.session_state.blur_rules['face'] = st.selectbox(
-            "Face Blur Method",
-            options=["pixelate", "gaussian", "edge_preserving", "none"],
-            index=0
+        # Get predefined blur rules from database
+        blur_rules = st.session_state.db_manager.get_all_blur_rules()
+        blur_rule_names = [rule.name for rule in blur_rules]
+        default_rule = st.session_state.db_manager.get_default_blur_rule()
+        default_index = 0
+        if default_rule and default_rule.name in blur_rule_names:
+            default_index = blur_rule_names.index(default_rule.name)
+        
+        # Add a profile selector for predefined blur settings
+        selected_rule_name = st.selectbox(
+            "Blur Profile",
+            options=blur_rule_names,
+            index=default_index,
+            help="Select a predefined blur profile or customize below"
         )
         
-        st.session_state.blur_rules['document'] = st.selectbox(
-            "Document Blur Method",
-            options=["gaussian", "pixelate", "edge_preserving", "none"],
-            index=0
-        )
+        # Update blur rules based on selection
+        selected_rule = next((rule for rule in blur_rules if rule.name == selected_rule_name), None)
+        if selected_rule:
+            st.session_state.blur_rules = selected_rule.rules
+            
+            # Show a description if available
+            if selected_rule.description:
+                st.info(selected_rule.description)
         
-        st.session_state.blur_rules['credit_card'] = st.selectbox(
-            "Credit Card Blur Method",
-            options=["pixelate", "gaussian", "edge_preserving", "none"],
-            index=0
-        )
-        
-        st.session_state.blur_rules['license_plate'] = st.selectbox(
-            "License Plate Blur Method",
-            options=["pixelate", "gaussian", "edge_preserving", "none"],
-            index=0
-        )
-        
-        st.session_state.blur_rules['screen'] = st.selectbox(
-            "Screen Blur Method",
-            options=["edge_preserving", "gaussian", "pixelate", "none"],
-            index=0
-        )
-        
-        st.session_state.blur_rules['text'] = st.selectbox(
-            "Sensitive Text Blur Method",
-            options=["gaussian", "pixelate", "edge_preserving", "none"],
-            index=0
-        )
+        # Object blur methods with values from selected profile
+        st.markdown("#### Customize Blur Methods")
+        with st.expander("Customize Individual Blur Settings"):
+            # Face blur
+            face_options = ["pixelate", "gaussian", "edge_preserving", "none"]
+            face_index = 0
+            if 'face' in st.session_state.blur_rules:
+                if st.session_state.blur_rules['face'] in face_options:
+                    face_index = face_options.index(st.session_state.blur_rules['face'])
+            
+            st.session_state.blur_rules['face'] = st.selectbox(
+                "Face Blur Method",
+                options=face_options,
+                index=face_index
+            )
+            
+            # Document blur
+            doc_options = ["gaussian", "pixelate", "edge_preserving", "none"]
+            doc_index = 0
+            if 'document' in st.session_state.blur_rules:
+                if st.session_state.blur_rules['document'] in doc_options:
+                    doc_index = doc_options.index(st.session_state.blur_rules['document'])
+                    
+            st.session_state.blur_rules['document'] = st.selectbox(
+                "Document Blur Method",
+                options=doc_options,
+                index=doc_index
+            )
+            
+            # Credit card blur
+            cc_options = ["pixelate", "gaussian", "edge_preserving", "none"]
+            cc_index = 0
+            if 'credit_card' in st.session_state.blur_rules:
+                if st.session_state.blur_rules['credit_card'] in cc_options:
+                    cc_index = cc_options.index(st.session_state.blur_rules['credit_card'])
+                    
+            st.session_state.blur_rules['credit_card'] = st.selectbox(
+                "Credit Card Blur Method",
+                options=cc_options,
+                index=cc_index
+            )
+            
+            # License plate blur
+            lp_options = ["pixelate", "gaussian", "edge_preserving", "none"]
+            lp_index = 0
+            if 'license_plate' in st.session_state.blur_rules:
+                if st.session_state.blur_rules['license_plate'] in lp_options:
+                    lp_index = lp_options.index(st.session_state.blur_rules['license_plate'])
+                    
+            st.session_state.blur_rules['license_plate'] = st.selectbox(
+                "License Plate Blur Method",
+                options=lp_options,
+                index=lp_index
+            )
+            
+            # Screen blur
+            screen_options = ["edge_preserving", "gaussian", "pixelate", "none"]
+            screen_index = 0
+            if 'screen' in st.session_state.blur_rules:
+                if st.session_state.blur_rules['screen'] in screen_options:
+                    screen_index = screen_options.index(st.session_state.blur_rules['screen'])
+                    
+            st.session_state.blur_rules['screen'] = st.selectbox(
+                "Screen Blur Method",
+                options=screen_options,
+                index=screen_index
+            )
+            
+            # Text blur
+            text_options = ["gaussian", "pixelate", "edge_preserving", "none"]
+            text_index = 0
+            if 'text' in st.session_state.blur_rules:
+                if st.session_state.blur_rules['text'] in text_options:
+                    text_index = text_options.index(st.session_state.blur_rules['text'])
+                    
+            st.session_state.blur_rules['text'] = st.selectbox(
+                "Sensitive Text Blur Method",
+                options=text_options,
+                index=text_index
+            )
         
         # Update blur rules
         st.session_state.processor.set_blur_rules(st.session_state.blur_rules)
         
         # Text detection settings
         st.subheader("Text Detection")
-        sensitive_keywords = st.text_area(
-            "Sensitive Keywords (comma separated)",
-            "confidential,private,secret,password,visa,mastercard,american express,cvv,ssn,social security"
+        
+        # Show dropdown to select a keyword list from database
+        keyword_lists = st.session_state.db_manager.get_all_keyword_lists()
+        keyword_list_names = [kl.name for kl in keyword_lists]
+        default_keyword_list = st.session_state.db_manager.get_default_keyword_list()
+        default_index = 0
+        if default_keyword_list and default_keyword_list.name in keyword_list_names:
+            default_index = keyword_list_names.index(default_keyword_list.name)
+        
+        selected_keyword_list = st.selectbox(
+            "Keyword List",
+            options=keyword_list_names,
+            index=default_index,
+            help="Select a predefined list of sensitive keywords to detect"
         )
-        st.session_state.processor.set_sensitive_keywords([kw.strip() for kw in sensitive_keywords.lower().split(',')])
+        
+        # Get selected keyword list
+        selected_list = next((kl for kl in keyword_lists if kl.name == selected_keyword_list), None)
+        if selected_list:
+            # Show keywords as comma-separated in text area
+            keyword_str = ", ".join(selected_list.keywords)
+            sensitive_keywords = st.text_area(
+                "Sensitive Keywords (comma separated)",
+                value=keyword_str,
+                help="Add or remove keywords as needed. These will be detected in text content."
+            )
+            # Update processor with the keywords
+            st.session_state.processor.set_sensitive_keywords([kw.strip() for kw in sensitive_keywords.lower().split(',')])
     
     # Main content area
     col1, col2 = st.columns([2, 1])
@@ -258,6 +394,14 @@ def main():
         # Add a success message
         st.sidebar.success("Camera connected successfully!", icon="✅")
         
+        # Start a new detection session in the database
+        if not st.session_state.detection_session_id:
+            try:
+                st.session_state.detection_session_id = st.session_state.db_manager.start_detection_session()
+                st.sidebar.success(f"Started new detection session (ID: {st.session_state.detection_session_id})", icon="🔄")
+            except Exception as e:
+                st.sidebar.warning(f"Could not start database session: {e}")
+        
         # Performance metrics
         frame_count = 0
         start_time = time.time()
@@ -281,6 +425,25 @@ def main():
                 # Update metrics
                 frame_count += 1
                 processing_time = frame_processing_end - frame_processing_start
+                
+                # Log detections to database (every 10 frames to reduce DB load)
+                if frame_count % 10 == 0 and st.session_state.detection_session_id:
+                    try:
+                        for obj_type, obj_boxes in detections.items():
+                            if len(obj_boxes) > 0:
+                                # Get blur method used for this object type
+                                blur_method = st.session_state.blur_rules.get(obj_type, 'none')
+                                
+                                # Log each detection
+                                for _ in range(len(obj_boxes)):
+                                    st.session_state.db_manager.log_detection(
+                                        st.session_state.detection_session_id,
+                                        obj_type,
+                                        blur_method
+                                    )
+                    except Exception as e:
+                        # Silently ignore database errors to keep processing frames
+                        pass
                 
                 if frame_count % 10 == 0:  # Update FPS every 10 frames
                     current_time = time.time()
@@ -330,6 +493,22 @@ def main():
         finally:
             # Release webcam when done
             cap.release()
+            
+            # End detection session in database
+            if st.session_state.detection_session_id:
+                try:
+                    duration = st.session_state.db_manager.end_detection_session(st.session_state.detection_session_id)
+                    st.sidebar.success(f"Detection session completed ({duration:.1f} seconds)", icon="✅")
+                    
+                    # Get detection stats
+                    stats = st.session_state.db_manager.get_detection_stats(st.session_state.detection_session_id)
+                    if stats:
+                        st.sidebar.info(f"**Detection Summary:**\n" + "\n".join([f"- {k}: {v}" for k, v in stats.items()]))
+                    
+                    # Reset session ID for next time
+                    st.session_state.detection_session_id = None
+                except Exception as e:
+                    st.sidebar.warning(f"Could not finalize database session: {e}")
     else:
         # Display placeholder when webcam is not active
         placeholder_img = np.zeros((480, 640, 3), dtype=np.uint8)
