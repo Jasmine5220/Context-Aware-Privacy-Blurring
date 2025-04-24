@@ -6,6 +6,7 @@ from utils.video_processor import VideoProcessor
 from utils.object_detector import ObjectDetector
 from utils.text_analyzer import TextAnalyzer
 from utils.blur_techniques import BlurTechniques
+from utils.demo_video_generator import DemoVideoGenerator
 import os
 
 # Page configuration
@@ -45,9 +46,10 @@ def main():
     with st.sidebar:
         st.header("Controls")
         
-        # Camera controls
-        st.subheader("Camera")
-        webcam_toggle = st.toggle("Activate Webcam", value=st.session_state.is_webcam_active)
+        # Demo feed controls
+        st.subheader("Demo Feed")
+        st.info("Using a synthetic demo video feed with simulated sensitive content")
+        webcam_toggle = st.toggle("Activate Demo", value=st.session_state.is_webcam_active)
         
         if webcam_toggle != st.session_state.is_webcam_active:
             st.session_state.is_webcam_active = webcam_toggle
@@ -159,16 +161,8 @@ def main():
     
     # Video processing loop
     if st.session_state.is_webcam_active:
-        # Start webcam
-        cap = cv2.VideoCapture(0)
-        
-        if not cap.isOpened():
-            st.error("Failed to open webcam. Please check your camera connection.")
-            return
-        
-        # Set lower resolution for faster processing
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        # Start demo video generator instead of webcam
+        video_gen = DemoVideoGenerator()
         
         # Performance metrics
         frame_count = 0
@@ -178,11 +172,8 @@ def main():
         
         try:
             while st.session_state.is_webcam_active:
-                # Read frame
-                ret, frame = cap.read()
-                if not ret:
-                    st.error("Failed to get frame from webcam.")
-                    break
+                # Generate a demo frame
+                frame = video_gen.get_frame()
                 
                 # Process frame
                 frame_processing_start = time.time()
@@ -200,37 +191,44 @@ def main():
                         fps = frame_count / elapsed
                 
                 # Display processed frame
-                video_placeholder.image(processed_frame, channels="BGR", use_column_width=True)
+                video_placeholder.image(processed_frame, channels="BGR", use_container_width=True)
                 
                 # Display metrics
-                metrics_placeholder.columns(3)[0].metric("FPS", f"{fps:.1f}")
-                metrics_placeholder.columns(3)[1].metric("Processing Time", f"{processing_time*1000:.1f} ms")
-                metrics_placeholder.columns(3)[2].metric("Objects Detected", len(detections))
+                metrics_cols = metrics_placeholder.columns(3)
+                metrics_cols[0].metric("FPS", f"{fps:.1f}")
+                metrics_cols[1].metric("Processing Time", f"{processing_time*1000:.1f} ms")
+                
+                # Count detected objects
+                total_detected = 0
+                for obj_list in detections.values():
+                    total_detected += len(obj_list)
+                
+                metrics_cols[2].metric("Objects Detected", total_detected)
                 
                 # Display detections
                 detection_text = "### Detected Objects:\n"
                 if detections:
-                    for obj_type, count in detections.items():
-                        if count > 0:
-                            detection_text += f"- {obj_type.title()}: {count}\n"
+                    for obj_type, obj_boxes in detections.items():
+                        if len(obj_boxes) > 0:
+                            detection_text += f"- {obj_type.title()}: {len(obj_boxes)}\n"
                 else:
                     detection_text += "No sensitive objects detected"
                 
                 detections_placeholder.markdown(detection_text)
                 
                 # Small delay to reduce CPU usage
-                time.sleep(0.01)
+                time.sleep(0.05)
                 
         except Exception as e:
             st.error(f"Error in video processing: {e}")
         
         finally:
-            # Release webcam when done
-            cap.release()
+            # Release resources
+            video_gen.release()
     else:
-        # Display placeholder when webcam is not active
-        video_placeholder.image(np.zeros((480, 640, 3), dtype=np.uint8), channels="BGR", use_column_width=True)
-        detections_placeholder.markdown("### Activate the webcam to start detecting and blurring sensitive content")
+        # Display placeholder when demo is not active
+        video_placeholder.image(np.zeros((480, 640, 3), dtype=np.uint8), channels="BGR", use_container_width=True)
+        detections_placeholder.markdown("### Activate the demo to start privacy protection")
 
 if __name__ == "__main__":
     main()
