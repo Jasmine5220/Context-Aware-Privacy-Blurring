@@ -3,13 +3,20 @@ import datetime
 from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, JSON, Boolean, ForeignKey, Text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
+from dotenv import load_dotenv
+import os
 import json
+
+# 👇 Load environment variables from the .env file
+load_dotenv()
 
 # Get database connection string from environment variable
 DATABASE_URL = os.environ.get('DATABASE_URL')
+print("DATABASE_URL:", DATABASE_URL)
 
 # Create SQLAlchemy engine and session
-engine = create_engine(DATABASE_URL)
+# database.py
+engine = create_engine(DATABASE_URL, echo=True)
 Session = sessionmaker(bind=engine)
 Base = declarative_base()
 
